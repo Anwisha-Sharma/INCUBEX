@@ -1,0 +1,12 @@
+{
+  "name": "rescuemesh-local-hub",
+  "version": "1.0.0",
+  "description": "RescueMesh offline-first local network WebSocket hub for emergency responder hotspot sync",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
