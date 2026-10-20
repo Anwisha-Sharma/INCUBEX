@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # RescueMesh — Offline-First Disaster Incident Reporting, Reconciliation & Prioritization
 
 RescueMesh is an offline-first emergency coordination platform allowing civilians and first responders to record incident reports without internet connectivity, retain reports locally, exchange data opportunistically (via animated chunked QR or local WebSocket hotspot), merge observations without losing conflicts, and deterministically prioritize incidents using an explainable scoring formula.
@@ -113,3 +114,6 @@ docker compose up --build
 Contract definitions, canonical JSON formatting specifications, and OpenAPI schemas are located in:
 - [`contracts/openapi.json`](file:///c:/Users/rajpu/OneDrive/Pictures/Documents/incubex/contracts/openapi.json)
 - [`contracts/README.md`](file:///c:/Users/rajpu/OneDrive/Pictures/Documents/incubex/contracts/README.md)
+=======
+# INCUBEX
+>>>>>>> origin/main
