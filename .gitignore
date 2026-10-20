@@ -30,6 +30,7 @@ dist/
 *.db
 postgres-data/
 valkey-data/
+data/
 
 # OS / IDE
 .DS_Store

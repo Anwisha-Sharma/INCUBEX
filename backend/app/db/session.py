@@ -7,15 +7,19 @@ from sqlalchemy.ext.asyncio import (
 from app.core.config import settings
 from app.db.base import Base
 
+from sqlalchemy.pool import NullPool
+
 connect_args = {}
+engine_kwargs = {"echo": settings.DEBUG, "future": True}
+
 if settings.DATABASE_URL.startswith("sqlite"):
     connect_args["check_same_thread"] = False
+    engine_kwargs["poolclass"] = NullPool
 
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=settings.DEBUG,
     connect_args=connect_args,
-    future=True,
+    **engine_kwargs,
 )
 
 AsyncSessionLocal = async_sessionmaker(

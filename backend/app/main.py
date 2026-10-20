@@ -12,6 +12,7 @@ from app.api.v1.health import router as health_router
 from app.api.v1.events import router as events_router
 from app.api.v1.sync import router as sync_router
 from app.api.v1.incidents import router as incidents_router
+from app.api.v1.evidence import router as evidence_router
 from app.sync.hub import hub_router
 
 
@@ -64,5 +65,6 @@ app.include_router(health_router, prefix=settings.API_V1_PREFIX)
 app.include_router(events_router, prefix=settings.API_V1_PREFIX)
 app.include_router(sync_router, prefix=settings.API_V1_PREFIX)
 app.include_router(incidents_router, prefix=settings.API_V1_PREFIX)
+app.include_router(evidence_router, prefix=settings.API_V1_PREFIX)
 app.include_router(hub_router)
 app.include_router(health_router)  # Also expose /health and /ready at root for top-level probes

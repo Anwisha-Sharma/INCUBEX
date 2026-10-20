@@ -35,5 +35,6 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str | None = Field(default=None, description="Optional Groq API key")
     GROQ_MODEL: str = Field(default="openai/gpt-oss-120b", description="Groq model ID")
     ANTHROPIC_API_KEY: str | None = Field(default=None, description="Optional Anthropic API key")
+    ANTHROPIC_MODEL: str = Field(default="claude-3-haiku-20240307", description="Anthropic model ID")
 
 settings = Settings()

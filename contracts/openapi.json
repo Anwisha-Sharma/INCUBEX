@@ -32,7 +32,7 @@
           "Health & Readiness"
         ],
         "summary": "Service Readiness Probe",
-        "description": "Returns operational readiness status.\nIndicates whether event validation, cryptography, and storage interfaces are active.",
+        "description": "Returns operational readiness status.\nActively probes database connectivity and explicitly exposes degraded offline operation\nif running under local SQLite fallback rather than clustered PostgreSQL.",
         "operationId": "readiness_check_api_v1_ready_get",
         "responses": {
           "200": {
@@ -685,8 +685,8 @@
         "tags": [
           "Incidents & Priority Reconciliation"
         ],
-        "summary": "Sensitivity analysis varying each weight by \u00b11",
-        "description": "Performs sensitivity analysis on the priority formula for this incident:\nVaries weights by \u00b11 and reports whether the priority classification level remains stable.",
+        "summary": "Sensitivity analysis varying each weight by ±1",
+        "description": "Performs sensitivity analysis on the priority formula for this incident:\nVaries weights by ±1 and reports whether the priority classification level remains stable.",
         "operationId": "get_incident_sensitivity_api_v1_incidents__incident_id__sensitivity_get",
         "parameters": [
           {
@@ -776,6 +776,67 @@
         }
       }
     },
+    "/api/v1/evidence/upload": {
+      "post": {
+        "tags": [
+          "Evidence & Media Privacy"
+        ],
+        "summary": "Upload image evidence with automatic EXIF metadata stripping",
+        "description": "Evidence Image Upload Endpoint:\n- Accepts direct binary image streams or JSON Base64 payloads (zero external multipart dependency).\n- Strips privacy-sensitive EXIF metadata (GPS coordinates, camera model, timestamps).\n- Computes content-addressed SHA-256 hash of cleaned bytes.\n- Saves sanitized image for local offline storage or mesh transmission.\n- Returns the content-addressed evidence_hash ready for inclusion in event payload.evidence_hashes.",
+        "operationId": "upload_evidence_api_v1_evidence_upload_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/evidence/{evidence_hash}": {
+      "get": {
+        "tags": [
+          "Evidence & Media Privacy"
+        ],
+        "summary": "Retrieve sanitized evidence image by SHA-256 hash",
+        "description": "Serve sanitized evidence file by content address.",
+        "operationId": "get_evidence_api_v1_evidence__evidence_hash__get",
+        "parameters": [
+          {
+            "name": "evidence_hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Evidence Hash"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -802,7 +863,7 @@
           "Health & Readiness"
         ],
         "summary": "Service Readiness Probe",
-        "description": "Returns operational readiness status.\nIndicates whether event validation, cryptography, and storage interfaces are active.",
+        "description": "Returns operational readiness status.\nActively probes database connectivity and explicitly exposes degraded offline operation\nif running under local SQLite fallback rather than clustered PostgreSQL.",
         "operationId": "readiness_check_ready_get",
         "responses": {
           "200": {

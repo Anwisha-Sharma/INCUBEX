@@ -155,3 +155,75 @@ async def test_sync_summary_and_missing_events():
         assert missing_resp.status_code == 200
         missing_data = missing_resp.json()
         assert any(item["event_id"] == event2["event_id"] for item in missing_data["missing_events"])
+
+
+@pytest.mark.asyncio
+async def test_persistence_across_restart():
+    """Verify accepted events survive complete database engine disposal and re-initialization."""
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+    from sqlalchemy import select
+    from sqlalchemy.pool import NullPool
+    from app.db.models import EventModel
+    from app.core.config import settings
+    from app.db.session import engine
+
+    priv_pem, pub_hex, dev_id = generate_key_pair()
+    event = make_test_event(dev_id, priv_pem, description="Persisted across restart")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/api/v1/events/ingest",
+            json={"events": [event], "public_keys": {dev_id: pub_hex}},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["persisted_count"] == 1
+
+    # Simulate process shutdown: dispose current engine
+    await engine.dispose()
+
+    # Re-initialize new engine pointing to the same persistent store
+    restarted_engine = create_async_engine(
+        settings.DATABASE_URL,
+        poolclass=NullPool,
+        connect_args={"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {},
+    )
+    RestartedSession = async_sessionmaker(bind=restarted_engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with RestartedSession() as session:
+        stored_event = await session.scalar(
+            select(EventModel).where(EventModel.event_id == event["event_id"])
+        )
+        assert stored_event is not None
+        assert stored_event.event_id == event["event_id"]
+        assert stored_event.device_id == dev_id
+        assert stored_event.payload["description"] == "Persisted across restart"
+
+    await restarted_engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_event_ingestion():
+    """Verify atomic idempotency and transaction safety under concurrent submissions."""
+    import asyncio
+
+    priv_pem, pub_hex, dev_id = generate_key_pair()
+    event = make_test_event(dev_id, priv_pem, description="Concurrent ingestion test")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async def submit():
+            return await client.post(
+                "/api/v1/events/ingest",
+                json={"events": [event], "public_keys": {dev_id: pub_hex}},
+            )
+
+        responses = await asyncio.gather(*[submit() for _ in range(5)])
+        assert all(r.status_code == 200 for r in responses)
+
+        persisted_counts = [r.json()["persisted_count"] for r in responses]
+        assert sum(persisted_counts) == 1
+
+        duplicate_counts = [r.json()["duplicate_count"] for r in responses]
+        assert sum(duplicate_counts) == 4
+

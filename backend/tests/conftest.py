@@ -11,9 +11,17 @@ from app.db.models import (
 )
 
 
+DB_TEST_MODULES = {"test_persistence", "test_api", "test_e2e", "test_websocket"}
+
+
 @pytest.fixture(autouse=True)
-async def clean_database():
-    """Ensure tables exist and clear test data before each test for total test isolation."""
+async def clean_database(request):
+    """Ensure tables exist and clear test data before DB tests for total test isolation."""
+    mod_name = request.module.__name__
+    if not any(target in mod_name for target in DB_TEST_MODULES):
+        yield
+        return
+
     await init_db()
     async with AsyncSessionLocal() as session:
         await session.execute(delete(IncidentEventLinkModel))
@@ -24,3 +32,6 @@ async def clean_database():
         await session.execute(delete(DeviceModel))
         await session.commit()
     yield
+    from app.db.session import engine
+    await engine.dispose()
+

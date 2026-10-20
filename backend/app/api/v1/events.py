@@ -3,6 +3,7 @@ import uuid
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import desc, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -161,12 +162,17 @@ async def ingest_events(
     # Register/update any new public keys in the device registry
     for dev_id, pub_hex in request.public_keys.items():
         if dev_id not in known_pub_keys:
-            new_device = DeviceModel(
-                device_id=dev_id,
-                public_key_hex=pub_hex,
-                role="civilian",
-            )
-            db.add(new_device)
+            try:
+                async with db.begin_nested():
+                    new_device = DeviceModel(
+                        device_id=dev_id,
+                        public_key_hex=pub_hex,
+                        role="civilian",
+                    )
+                    db.add(new_device)
+                    await db.flush()
+            except IntegrityError:
+                pass  # Concurrently registered by another worker
 
     persisted_ids: list[str] = []
     duplicate_ids: list[str] = []
@@ -178,14 +184,19 @@ async def ingest_events(
 
         if not detail.is_valid:
             # Quarantine invalid or tampered event
-            quarantined_entry = QuarantinedEventModel(
-                event_id=event.event_id,
-                device_id=event.device_id,
-                raw_data=event.model_dump(mode="json"),
-                quarantine_reasons=[r.value for r in detail.quarantine_reasons],
-                remote_addr=client_ip,
-            )
-            db.add(quarantined_entry)
+            try:
+                async with db.begin_nested():
+                    quarantined_entry = QuarantinedEventModel(
+                        event_id=event.event_id,
+                        device_id=event.device_id,
+                        raw_data=event.model_dump(mode="json"),
+                        quarantine_reasons=[r.value for r in detail.quarantine_reasons],
+                        remote_addr=client_ip,
+                    )
+                    db.add(quarantined_entry)
+                    await db.flush()
+            except IntegrityError:
+                pass
             quarantined_ids.append(event.event_id)
             quarantine_details.append(detail)
             continue
@@ -198,57 +209,75 @@ async def ingest_events(
             duplicate_ids.append(event.event_id)
             continue
 
-        # Persist new valid event
-        new_event = EventModel(
-            event_id=event.event_id,
-            event_type=event.event_type.value,
-            device_id=event.device_id,
-            wall_time_ms=event.clock.wall_time_ms,
-            logical_counter=event.clock.logical_counter,
-            node_id=event.clock.node_id,
-            payload=event.payload,
-            signature=event.signature,
-            canonical_bytes_len=len(canonical_bytes),
-        )
-        db.add(new_event)
-        persisted_ids.append(event.event_id)
+        try:
+            async with db.begin_nested():
+                # Persist new valid event
+                new_event = EventModel(
+                    event_id=event.event_id,
+                    event_type=event.event_type.value,
+                    device_id=event.device_id,
+                    wall_time_ms=event.clock.wall_time_ms,
+                    logical_counter=event.clock.logical_counter,
+                    node_id=event.clock.node_id,
+                    payload=event.payload,
+                    signature=event.signature,
+                    canonical_bytes_len=len(canonical_bytes),
+                )
+                db.add(new_event)
+                await db.flush()
+                persisted_ids.append(event.event_id)
 
-        # If event is a fresh report, initialize incident view
-        if event.event_type.value == "report":
-            incident_id = f"inc_{event.event_id[:16]}"
-            payload = event.payload
-            new_incident = IncidentModel(
-                incident_id=incident_id,
-                incident_type=payload.get("incident_type", "other"),
-                primary_event_id=event.event_id,
-                created_at_ms=event.clock.wall_time_ms,
-                status="active",
-                current_severity=payload.get("severity", 0),
-                current_people_affected=payload.get("people_affected", 0),
-                current_people_trapped=payload.get("people_trapped", False),
-                latitude=payload.get("latitude", 0.0),
-                longitude=payload.get("longitude", 0.0),
-                updated_at_ms=event.clock.wall_time_ms,
-            )
-            db.add(new_incident)
+                # If event is a fresh report, initialize incident view
+                if event.event_type.value == "report":
+                    incident_id = f"inc_{event.event_id[:16]}"
+                    payload = event.payload
+                    existing_inc = await db.scalar(
+                        select(IncidentModel).where(IncidentModel.incident_id == incident_id)
+                    )
+                    if not existing_inc:
+                        new_incident = IncidentModel(
+                            incident_id=incident_id,
+                            incident_type=payload.get("incident_type", "other"),
+                            primary_event_id=event.event_id,
+                            created_at_ms=event.clock.wall_time_ms,
+                            status="active",
+                            current_severity=payload.get("severity", 0),
+                            current_people_affected=payload.get("people_affected", 0),
+                            current_people_trapped=payload.get("people_trapped", False),
+                            latitude=payload.get("latitude", 0.0),
+                            longitude=payload.get("longitude", 0.0),
+                            updated_at_ms=event.clock.wall_time_ms,
+                        )
+                        db.add(new_incident)
 
-            # Link incident to event
-            link = IncidentEventLinkModel(
-                incident_id=incident_id,
-                event_id=event.event_id,
-            )
-            db.add(link)
+                    # Link incident to event
+                    link = IncidentEventLinkModel(
+                        incident_id=incident_id,
+                        event_id=event.event_id,
+                    )
+                    db.add(link)
+                    await db.flush()
+        except IntegrityError:
+            # Concurrent submission race: another worker persisted the same event
+            duplicate_ids.append(event.event_id)
+            if event.event_id in persisted_ids:
+                persisted_ids.remove(event.event_id)
 
     # Record sync session ledger
-    sync_record = SyncRecordModel(
-        sync_id=uuid.uuid4().hex,
-        device_id=request.client_device_id or (request.events[0].device_id if request.events else "unknown"),
-        transport=request.transport,
-        events_received=len(request.events),
-        events_persisted=len(persisted_ids),
-        events_quarantined=len(quarantined_ids),
-    )
-    db.add(sync_record)
+    try:
+        async with db.begin_nested():
+            sync_record = SyncRecordModel(
+                sync_id=uuid.uuid4().hex,
+                device_id=request.client_device_id or (request.events[0].device_id if request.events else "unknown"),
+                transport=request.transport,
+                events_received=len(request.events),
+                events_persisted=len(persisted_ids),
+                events_quarantined=len(quarantined_ids),
+            )
+            db.add(sync_record)
+            await db.flush()
+    except IntegrityError:
+        pass
 
     await db.commit()
 

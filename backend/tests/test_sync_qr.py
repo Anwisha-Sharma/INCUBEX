@@ -50,3 +50,55 @@ def test_qr_tampered_frame_raises_integrity_error():
                 reassembler.add_frame(tampered_frame)
             else:
                 reassembler.add_frame(f)
+
+
+def test_qr_duplicate_frames_handled_safely():
+    payload = {"status": "all_clear", "responders": 4}
+    frames = QRChunker.encode_to_frames(payload, chunk_size=40)
+    assert len(frames) >= 2
+
+    reassembler = QRReassembler()
+    # Add frame 0 twice
+    s1 = reassembler.add_frame(frames[0])
+    assert s1["received_frames"] == 1
+    s2 = reassembler.add_frame(frames[0])
+    assert s2["received_frames"] == 1  # Deduped in frames dict
+
+    # Feed remaining frames
+    for f in frames[1:]:
+        final = reassembler.add_frame(f)
+
+    assert final["is_complete"] is True
+    assert final["payload"] == payload
+
+
+def test_qr_invalid_frame_bounds_raise_value_error():
+    reassembler = QRReassembler()
+
+    # Out of range index: frame_idx 5 on total_frames 2
+    with pytest.raises(ValueError, match="out of range"):
+        reassembler.add_frame("RM1:abc12345:5:2:hashpref:chunkdata")
+
+    # Zero total frames
+    with pytest.raises(ValueError, match="greater than zero"):
+        reassembler.add_frame("RM1:abc12345:0:0:hashpref:chunkdata")
+
+    # Invalid non-numeric frames
+    with pytest.raises(ValueError, match="valid integers"):
+        reassembler.add_frame("RM1:abc12345:NaN:two:hashpref:chunkdata")
+
+
+def test_qr_abandoned_transfer_cleanup():
+    import time
+    reassembler = QRReassembler()
+    frame = "RM1:aband001:0:5:hash12345678:chunkdata"
+    reassembler.add_frame(frame)
+    assert "aband001" in reassembler.transfers
+
+    # Backdate session updated_at by 700 seconds
+    reassembler.transfers["aband001"]["updated_at"] = time.time() - 700
+
+    pruned = reassembler.cleanup_expired_transfers(max_age_seconds=600)
+    assert pruned == 1
+    assert "aband001" not in reassembler.transfers
+

@@ -1,11 +1,15 @@
 import json
+import time
 from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.canonical import compute_event_canonical_bytes, compute_canonical_hash
-from app.db.models import EventModel
+from app.core.security import verify_signature
+from app.db.models import DeviceModel, EventModel, QuarantinedEventModel
 from app.db.session import AsyncSessionLocal
+from app.models.enums import QuarantineReason
 from app.models.events import HybridLogicalClock, RescueMeshEvent
 
 hub_router = APIRouter(tags=["Local WebSocket Hub"])
@@ -115,47 +119,115 @@ async def websocket_sync_endpoint(websocket: WebSocket):
                 )
 
             elif msg_type == "PUBLISH_EVENTS":
-                # Peer pushes new events to hub; persist and gossip broadcast to all other peers
+                # Peer pushes new events to hub; validate cryptographically before persisting and gossiping
                 events_data = msg.get("events", [])
                 persisted_events = []
+                quarantined_count = 0
+                now_ms = int(time.time() * 1000)
 
                 async with AsyncSessionLocal() as session:
+                    # Pre-load known device public keys
+                    devices = await session.scalars(select(DeviceModel))
+                    known_keys = {d.device_id: d.public_key_hex for d in devices}
+
                     for ev_dict in events_data:
                         ev_id = ev_dict.get("event_id")
+                        if not ev_id:
+                            continue
+
+                        # Check if already present in event store
                         existing = await session.scalar(
                             select(EventModel).where(EventModel.event_id == ev_id)
                         )
-                        if not existing and ev_id:
-                            clock_data = ev_dict.get("clock", {})
-                            new_event = EventModel(
-                                event_id=ev_id,
-                                event_type=ev_dict.get("event_type", "report"),
-                                device_id=ev_dict.get("device_id", "unknown"),
-                                wall_time_ms=clock_data.get("wall_time_ms", 0),
-                                logical_counter=clock_data.get("logical_counter", 0),
-                                node_id=clock_data.get("node_id", "unknown"),
-                                payload=ev_dict.get("payload", {}),
-                                signature=ev_dict.get("signature", ""),
-                                canonical_bytes_len=len(raw_text),
-                            )
-                            session.add(new_event)
-                            persisted_events.append(ev_dict)
+                        if existing:
+                            continue
 
-                    if persisted_events:
+                        clock_data = ev_dict.get("clock", {})
+                        wall_time_ms = clock_data.get("wall_time_ms", 0)
+                        device_id = ev_dict.get("device_id", "unknown")
+                        event_type = ev_dict.get("event_type", "report")
+                        payload = ev_dict.get("payload", {})
+                        signature = ev_dict.get("signature", "")
+
+                        # 1. Canonical Hash Integrity Check
+                        try:
+                            canonical_bytes = compute_event_canonical_bytes(
+                                event_type=event_type,
+                                device_id=device_id,
+                                clock=clock_data,
+                                payload=payload,
+                            )
+                            expected_id = compute_canonical_hash(canonical_bytes)
+                            hash_valid = expected_id == ev_id
+                        except Exception:
+                            hash_valid = False
+                            canonical_bytes = b""
+
+                        # 2. Clock Skew Check
+                        skew = abs(wall_time_ms - now_ms)
+                        skew_valid = skew <= settings.MAX_CLOCK_SKEW_MS
+
+                        # 3. Signature Verification (if public key known)
+                        sig_valid = True
+                        if device_id in known_keys:
+                            sig_valid = verify_signature(
+                                public_key_hex=known_keys[device_id],
+                                signature_str=signature,
+                                canonical_bytes=canonical_bytes,
+                            )
+
+                        reasons = []
+                        if not hash_valid:
+                            reasons.append(QuarantineReason.HASH_MISMATCH.value)
+                        if not skew_valid:
+                            reasons.append(QuarantineReason.CLOCK_SKEW_EXCESSIVE.value)
+                        if not sig_valid:
+                            reasons.append(QuarantineReason.INVALID_SIGNATURE.value)
+
+                        if reasons:
+                            # Quarantine untrusted or tampered event
+                            quarantine_entry = QuarantinedEventModel(
+                                event_id=ev_id,
+                                device_id=device_id,
+                                raw_data=ev_dict,
+                                quarantine_reasons=reasons,
+                                remote_addr="websocket_peer",
+                            )
+                            session.add(quarantine_entry)
+                            quarantined_count += 1
+                            continue
+
+                        # Valid event: persist into event store
+                        new_event = EventModel(
+                            event_id=ev_id,
+                            event_type=event_type,
+                            device_id=device_id,
+                            wall_time_ms=wall_time_ms,
+                            logical_counter=clock_data.get("logical_counter", 0),
+                            node_id=clock_data.get("node_id", "unknown"),
+                            payload=payload,
+                            signature=signature,
+                            canonical_bytes_len=len(canonical_bytes),
+                        )
+                        session.add(new_event)
+                        persisted_events.append(ev_dict)
+
+                    if persisted_events or quarantined_count:
                         await session.commit()
 
-                # Acknowledge to sender
+                # Acknowledge to sender with explicit ingested and quarantined counts
                 await websocket.send_text(
                     json.dumps(
                         {
                             "type": "PUBLISH_ACK",
                             "ingested_count": len(persisted_events),
+                            "quarantined_count": quarantined_count,
                             "total_received": len(events_data),
                         }
                     )
                 )
 
-                # Broadcast newly published events to all other connected peers
+                # Broadcast newly published valid events to all other connected peers
                 if persisted_events:
                     await hub_manager.broadcast(
                         {"type": "EVENTS_BROADCAST", "events": persisted_events},

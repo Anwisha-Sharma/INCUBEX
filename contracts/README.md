@@ -95,19 +95,24 @@ If severity is Critical ($V = 3$), the priority level **CANNOT** be classified a
 ---
 
 ### 8. Key API Endpoints
+- `GET /health`: Fast process liveness probe.
+- `GET /ready`: Operational readiness probe. Actively checks database and explicitly exposes `mode: "degraded_offline"` when operating with local SQLite fallback rather than clustered PostgreSQL.
 - `POST /api/v1/events/validate`: In-memory event signature and canonical hash verification.
-- `POST /api/v1/events/ingest`: Idempotent batch event ingestion into persistent store.
+- `POST /api/v1/events/ingest`: Idempotent batch event ingestion into persistent store with concurrent savepoints.
 - `GET /api/v1/events`: List raw events with filters.
-- `GET /api/v1/events/quarantined`: Audit list of quarantined events.
+- `GET /api/v1/events/{event_id}`: Retrieve single event by ID.
+- `GET /api/v1/events/quarantined`: Audit list of quarantined events with forensic reasons.
 - `GET /api/v1/sync/summary`: Compact event-ID summary for peer sync.
 - `POST /api/v1/sync/missing`: Missing events transfer based on set difference.
 - `GET /api/v1/incidents`: Reconciled incident list with priority scores, factors, and conflict flags.
 - `GET /api/v1/incidents/{incident_id}`: Full incident dossier with factor explanation and timeline.
 - `GET /api/v1/incidents/{incident_id}/sensitivity`: Sensitivity analysis varying weights by $\pm 1$.
 - `GET /api/v1/incidents/{incident_id}/briefing`: Evidence-grounded responder briefing with Cite-or-Drop verification.
+- `POST /api/v1/evidence/upload`: Privacy-first evidence image upload; strips EXIF GPS metadata and computes content-addressed SHA-256 hash.
+- `GET /api/v1/evidence/{evidence_hash}`: Retrieve sanitized evidence image bytes.
 - `POST /api/v1/sync/export`: Export as raw JSON or animated Base64url QR frames.
 - `POST /api/v1/sync/import`: Progressive QR frame or JSON ingestion.
-- `WS /ws/sync`: Local network WebSocket hub for real-time hotspot gossip.
+- `WS /ws/sync`: Local network WebSocket hub for real-time hotspot gossip with inbound canonical and signature verification.
 
 ---
 
@@ -115,8 +120,10 @@ If severity is Critical ($V = 3$), the priority level **CANNOT** be classified a
 1. **Cite-or-Drop Rule**:
    - Every factual claim or casualty count returned by AI must reference an exact, existing `event_id`.
    - Any assertion lacking a valid citation or containing hallucinated figures not found in recorded evidence is automatically **dropped** before reaching the responder.
-2. **Deterministic Offline Fallback**:
-   - If Groq/Claude is unreachable or unconfigured, the briefing generator falls back to high-fidelity rule-based templates.
-   - Core reporting, reconciliation, and priority scoring remain 100% operational offline.
+2. **Provider Hierarchy & Deterministic Offline Fallback**:
+   - Primary: Groq API (`settings.GROQ_API_KEY`).
+   - Secondary: Anthropic Claude API (`settings.ANTHROPIC_API_KEY`).
+   - If Groq/Claude is unreachable, times out, or is unconfigured, the briefing generator seamlessly falls back to high-fidelity deterministic rule-based templates.
+   - Core reporting, reconciliation, and priority scoring remain 100% operational offline with zero internet access.
 
 The complete OpenAPI 3.1 specification is in [openapi.json](./openapi.json).
