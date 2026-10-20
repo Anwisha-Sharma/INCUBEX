@@ -1,0 +1,1971 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "RescueMesh Core API",
+    "description": "RescueMesh Offline-First Backend & Event Verification Core",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "tags": [
+          "Health & Readiness"
+        ],
+        "summary": "Service Liveness Probe",
+        "description": "Returns 200 OK indicating the API process is alive.\nDesigned for fast, zero-dependency health checks in local offline or containerized environments.",
+        "operationId": "health_check_api_v1_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ready": {
+      "get": {
+        "tags": [
+          "Health & Readiness"
+        ],
+        "summary": "Service Readiness Probe",
+        "description": "Returns operational readiness status.\nActively probes database connectivity and explicitly exposes degraded offline operation\nif running under local SQLite fallback rather than clustered PostgreSQL.",
+        "operationId": "readiness_check_api_v1_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/events/validate": {
+      "post": {
+        "tags": [
+          "Events, Persistence & Sync"
+        ],
+        "summary": "Validate and verify a batch of RescueMesh events in memory",
+        "description": "In-memory validation of append-only events:\n- Verifies SHA-256 canonical hash integrity.\n- Inspects physical clock skew.\n- Verifies ECDSA digital signature if public keys are supplied.\n- Marks malformed or tampered events for quarantine without discarding them.",
+        "operationId": "validate_events_api_v1_events_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventValidationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventValidationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/events/ingest": {
+      "post": {
+        "tags": [
+          "Events, Persistence & Sync"
+        ],
+        "summary": "Ingest, validate, and idempotently persist a batch of events",
+        "description": "Durable event ingestion endpoint:\n- Performs cryptographic and canonical integrity verification.\n- Idempotently persists valid events (duplicate events are silently skipped).\n- Preserves historical observations (append-only, never overwriting).\n- Quarantines invalid or tampered events in isolated storage.\n- Automatically updates device registry and records synchronization ledger.",
+        "operationId": "ingest_events_api_v1_events_ingest_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventIngestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventIngestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/events/quarantined": {
+      "get": {
+        "tags": [
+          "Events, Persistence & Sync"
+        ],
+        "summary": "List quarantined events for coordinator audit",
+        "description": "Retrieve isolated quarantined events with forensic reasons and client IP.",
+        "operationId": "list_quarantined_events_api_v1_events_quarantined_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/QuarantinedEventResponse"
+                  },
+                  "title": "Response List Quarantined Events Api V1 Events Quarantined Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/events/{event_id}": {
+      "get": {
+        "tags": [
+          "Events, Persistence & Sync"
+        ],
+        "summary": "Retrieve single stored event by ID",
+        "description": "Retrieve a single immutable event from the event store.",
+        "operationId": "get_event_by_id_api_v1_events__event_id__get",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Event Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "tags": [
+          "Events, Persistence & Sync"
+        ],
+        "summary": "List stored events with optional filtering",
+        "description": "Query append-only events ordered by Hybrid Logical Clock wall time.",
+        "operationId": "list_events_api_v1_events_get",
+        "parameters": [
+          {
+            "name": "event_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Event Type"
+            }
+          },
+          {
+            "name": "device_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Device Id"
+            }
+          },
+          {
+            "name": "since_wall_time_ms",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since Wall Time Ms"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EventDetailResponse"
+                  },
+                  "title": "Response List Events Api V1 Events Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/events/canonicalize": {
+      "post": {
+        "tags": [
+          "Events, Persistence & Sync"
+        ],
+        "summary": "Helper: Compute canonical bytes and SHA-256 event ID",
+        "description": "Utility endpoint allowing clients or test harnesses to compute the standard\nRescueMesh canonical JSON byte sequence and SHA-256 content-addressed ID.",
+        "operationId": "canonicalize_event_api_v1_events_canonicalize_post",
+        "parameters": [
+          {
+            "name": "event_type",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Event Type"
+            }
+          },
+          {
+            "name": "device_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_canonicalize_event_api_v1_events_canonicalize_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sync/summary": {
+      "get": {
+        "tags": [
+          "Peer Synchronization"
+        ],
+        "summary": "Get compact event-ID summary of the local event store",
+        "description": "Returns compact summary of all persisted event IDs and the highest HLC wall time.\nUsed by offline peers to immediately compute which events need to be exchanged.",
+        "operationId": "get_sync_summary_api_v1_sync_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncSummaryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sync/missing": {
+      "post": {
+        "tags": [
+          "Peer Synchronization"
+        ],
+        "summary": "Retrieve missing events based on peer's known event ID set",
+        "description": "Computes set difference (Server Events \\ Peer Events) and returns missing full event records.\nTransports can bundle this into JSON export or chunked QR codes.",
+        "operationId": "get_missing_events_api_v1_sync_missing_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MissingEventsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissingEventsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sync/export": {
+      "post": {
+        "tags": [
+          "Peer Synchronization"
+        ],
+        "summary": "Export events as standard JSON or Deflate-compressed animated QR frames",
+        "description": "Exports events for offline transfer:\n- 'chunked_qr': compresses into numbered Base64url QR frame sequence (Tier 0).\n- 'json': produces raw export for file transfer or USB exchange.",
+        "operationId": "export_sync_payload_api_v1_sync_export_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncExportResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sync/import": {
+      "post": {
+        "tags": [
+          "Peer Synchronization"
+        ],
+        "summary": "Import events from scanned QR frames or JSON payload",
+        "description": "Imports events via chunked QR or JSON:\n- Progressively reassembles QR frames.\n- If all frames are received, verifies integrity hash and idempotently persists events.",
+        "operationId": "import_sync_payload_api_v1_sync_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncImportProgressResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/incidents": {
+      "get": {
+        "tags": [
+          "Incidents & Priority Reconciliation"
+        ],
+        "summary": "List deterministically grouped incidents with priority scores",
+        "description": "Returns deterministically reconciled incident list.\nEvery priority score is calculated using S = 5V + 3P + 2C + 2R - 3U with safety clamp applied.",
+        "operationId": "list_incidents_api_v1_incidents_get",
+        "parameters": [
+          {
+            "name": "priority_level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Priority Level"
+            }
+          },
+          {
+            "name": "incident_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Incident Type"
+            }
+          },
+          {
+            "name": "has_conflict",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Conflict"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IncidentSummaryResponse"
+                  },
+                  "title": "Response List Incidents Api V1 Incidents Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/incidents/{incident_id}": {
+      "get": {
+        "tags": [
+          "Incidents & Priority Reconciliation"
+        ],
+        "summary": "Get full incident detail, conflict history, and priority explanation",
+        "description": "Returns full incident dossier:\n- Current values selected by latest HLC.\n- Preserved conflict history across all observers.\n- Transparent factor breakdown (V, P, C, R, U) and explanation.",
+        "operationId": "get_incident_detail_api_v1_incidents__incident_id__get",
+        "parameters": [
+          {
+            "name": "incident_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Incident Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/incidents/{incident_id}/sensitivity": {
+      "get": {
+        "tags": [
+          "Incidents & Priority Reconciliation"
+        ],
+        "summary": "Sensitivity analysis varying each weight by ±1",
+        "description": "Performs sensitivity analysis on the priority formula for this incident:\nVaries weights by ±1 and reports whether the priority classification level remains stable.",
+        "operationId": "get_incident_sensitivity_api_v1_incidents__incident_id__sensitivity_get",
+        "parameters": [
+          {
+            "name": "incident_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Incident Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/incidents/{incident_id}/briefing": {
+      "get": {
+        "tags": [
+          "Incidents & Priority Reconciliation"
+        ],
+        "summary": "Get evidence-grounded responder briefing with Cite-or-Drop verification",
+        "description": "Generates an evidence-grounded responder briefing:\n- Enforces Cite-or-Drop verification: uncorroborated claims and figures are dropped.\n- Seamlessly falls back to deterministic rule-based template if offline or unconfigured.",
+        "operationId": "get_incident_briefing_api_v1_incidents__incident_id__briefing_get",
+        "parameters": [
+          {
+            "name": "incident_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Incident Id"
+            }
+          },
+          {
+            "name": "force_offline_template",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Force deterministic rule-based template generation",
+              "default": false,
+              "title": "Force Offline Template"
+            },
+            "description": "Force deterministic rule-based template generation"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponderBriefing"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/evidence/upload": {
+      "post": {
+        "tags": [
+          "Evidence & Media Privacy"
+        ],
+        "summary": "Upload image evidence with automatic EXIF metadata stripping",
+        "description": "Evidence Image Upload Endpoint:\n- Accepts direct binary image streams or JSON Base64 payloads (zero external multipart dependency).\n- Strips privacy-sensitive EXIF metadata (GPS coordinates, camera model, timestamps).\n- Computes content-addressed SHA-256 hash of cleaned bytes.\n- Saves sanitized image for local offline storage or mesh transmission.\n- Returns the content-addressed evidence_hash ready for inclusion in event payload.evidence_hashes.",
+        "operationId": "upload_evidence_api_v1_evidence_upload_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/evidence/{evidence_hash}": {
+      "get": {
+        "tags": [
+          "Evidence & Media Privacy"
+        ],
+        "summary": "Retrieve sanitized evidence image by SHA-256 hash",
+        "description": "Serve sanitized evidence file by content address.",
+        "operationId": "get_evidence_api_v1_evidence__evidence_hash__get",
+        "parameters": [
+          {
+            "name": "evidence_hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Evidence Hash"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "Health & Readiness"
+        ],
+        "summary": "Service Liveness Probe",
+        "description": "Returns 200 OK indicating the API process is alive.\nDesigned for fast, zero-dependency health checks in local offline or containerized environments.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "tags": [
+          "Health & Readiness"
+        ],
+        "summary": "Service Readiness Probe",
+        "description": "Returns operational readiness status.\nActively probes database connectivity and explicitly exposes degraded offline operation\nif running under local SQLite fallback rather than clustered PostgreSQL.",
+        "operationId": "readiness_check_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Body_canonicalize_event_api_v1_events_canonicalize_post": {
+        "properties": {
+          "clock": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Clock"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          }
+        },
+        "type": "object",
+        "required": [
+          "clock",
+          "payload"
+        ],
+        "title": "Body_canonicalize_event_api_v1_events_canonicalize_post"
+      },
+      "EventDetailResponse": {
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "title": "Event Id"
+          },
+          "event_type": {
+            "type": "string",
+            "title": "Event Type"
+          },
+          "device_id": {
+            "type": "string",
+            "title": "Device Id"
+          },
+          "clock": {
+            "$ref": "#/components/schemas/HybridLogicalClock"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          },
+          "signature": {
+            "type": "string",
+            "title": "Signature"
+          },
+          "received_at_iso": {
+            "type": "string",
+            "title": "Received At Iso"
+          },
+          "canonical_bytes_len": {
+            "type": "integer",
+            "title": "Canonical Bytes Len"
+          }
+        },
+        "type": "object",
+        "required": [
+          "event_id",
+          "event_type",
+          "device_id",
+          "clock",
+          "payload",
+          "signature",
+          "received_at_iso",
+          "canonical_bytes_len"
+        ],
+        "title": "EventDetailResponse"
+      },
+      "EventIngestRequest": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/RescueMeshEvent"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Events"
+          },
+          "public_keys": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Public Keys",
+            "description": "Public keys mapping device_id -> uncompressed hex point"
+          },
+          "transport": {
+            "type": "string",
+            "title": "Transport",
+            "description": "Transport used: http, qr, websocket, or json_import",
+            "default": "http"
+          },
+          "client_device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Device Id",
+            "description": "Device ID initiating synchronization"
+          }
+        },
+        "type": "object",
+        "required": [
+          "events"
+        ],
+        "title": "EventIngestRequest",
+        "description": "Batch ingestion request containing signed RescueMesh events and peer metadata."
+      },
+      "EventIngestResponse": {
+        "properties": {
+          "total_received": {
+            "type": "integer",
+            "title": "Total Received"
+          },
+          "persisted_count": {
+            "type": "integer",
+            "title": "Persisted Count"
+          },
+          "duplicate_count": {
+            "type": "integer",
+            "title": "Duplicate Count"
+          },
+          "quarantined_count": {
+            "type": "integer",
+            "title": "Quarantined Count"
+          },
+          "persisted_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Persisted Ids"
+          },
+          "duplicate_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Duplicate Ids"
+          },
+          "quarantined_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Quarantined Ids"
+          },
+          "quarantine_details": {
+            "items": {
+              "$ref": "#/components/schemas/EventValidationDetail"
+            },
+            "type": "array",
+            "title": "Quarantine Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_received",
+          "persisted_count",
+          "duplicate_count",
+          "quarantined_count"
+        ],
+        "title": "EventIngestResponse"
+      },
+      "EventType": {
+        "type": "string",
+        "enum": [
+          "report",
+          "observation",
+          "link",
+          "unlink",
+          "roleGrant",
+          "assign",
+          "status"
+        ],
+        "title": "EventType"
+      },
+      "EventValidationDetail": {
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "title": "Event Id"
+          },
+          "is_valid": {
+            "type": "boolean",
+            "title": "Is Valid"
+          },
+          "canonical_hash_matches": {
+            "type": "boolean",
+            "title": "Canonical Hash Matches"
+          },
+          "signature_verified": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signature Verified"
+          },
+          "quarantine_reasons": {
+            "items": {
+              "$ref": "#/components/schemas/QuarantineReason"
+            },
+            "type": "array",
+            "title": "Quarantine Reasons"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "event_id",
+          "is_valid",
+          "canonical_hash_matches"
+        ],
+        "title": "EventValidationDetail"
+      },
+      "EventValidationRequest": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/RescueMeshEvent"
+            },
+            "type": "array",
+            "maxItems": 250,
+            "minItems": 1,
+            "title": "Events"
+          },
+          "public_keys": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Public Keys",
+            "description": "Optional map of device_id -> uncompressed hex or PEM public key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "events"
+        ],
+        "title": "EventValidationRequest",
+        "description": "Request model for batch or single event validation."
+      },
+      "EventValidationResponse": {
+        "properties": {
+          "total_events": {
+            "type": "integer",
+            "title": "Total Events"
+          },
+          "valid_count": {
+            "type": "integer",
+            "title": "Valid Count"
+          },
+          "quarantined_count": {
+            "type": "integer",
+            "title": "Quarantined Count"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/EventValidationDetail"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_events",
+          "valid_count",
+          "quarantined_count",
+          "results"
+        ],
+        "title": "EventValidationResponse"
+      },
+      "GroundedClaim": {
+        "properties": {
+          "statement": {
+            "type": "string",
+            "title": "Statement",
+            "description": "The factual observation or claim statement"
+          },
+          "cited_event_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cited Event Ids",
+            "description": "Event IDs corroborating this claim"
+          },
+          "is_grounded": {
+            "type": "boolean",
+            "title": "Is Grounded",
+            "description": "True if citations were verified in accepted event store",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "statement",
+          "cited_event_ids"
+        ],
+        "title": "GroundedClaim",
+        "description": "A factual claim tied directly to verified event citations."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HybridLogicalClock": {
+        "properties": {
+          "wall_time_ms": {
+            "type": "integer",
+            "title": "Wall Time Ms",
+            "description": "UTC physical wall time in milliseconds"
+          },
+          "logical_counter": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Logical Counter",
+            "description": "Logical counter incremented on causality ties",
+            "default": 0
+          },
+          "node_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 4,
+            "title": "Node Id",
+            "description": "Unique node / device identifier"
+          }
+        },
+        "type": "object",
+        "required": [
+          "wall_time_ms",
+          "node_id"
+        ],
+        "title": "HybridLogicalClock",
+        "description": "Hybrid Logical Clock representation:\n- wall_time_ms: Physical UTC timestamp in milliseconds\n- logical_counter: Tie-breaking sequence counter on the node\n- node_id: Unique identifier of the node (typically device_id)"
+      },
+      "IncidentDetailResponse": {
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id"
+          },
+          "incident_type": {
+            "type": "string",
+            "title": "Incident Type"
+          },
+          "latitude": {
+            "type": "number",
+            "title": "Latitude"
+          },
+          "longitude": {
+            "type": "number",
+            "title": "Longitude"
+          },
+          "current_severity": {
+            "type": "integer",
+            "title": "Current Severity"
+          },
+          "current_people_affected": {
+            "type": "integer",
+            "title": "Current People Affected"
+          },
+          "current_people_trapped": {
+            "type": "boolean",
+            "title": "Current People Trapped"
+          },
+          "current_description": {
+            "type": "string",
+            "title": "Current Description"
+          },
+          "evidence_hashes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Evidence Hashes"
+          },
+          "has_conflict": {
+            "type": "boolean",
+            "title": "Has Conflict"
+          },
+          "conflict_details": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Conflict Details"
+          },
+          "severity_observations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Severity Observations"
+          },
+          "location_observations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Location Observations"
+          },
+          "assigned_responder_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned Responder Id"
+          },
+          "responder_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responder Status"
+          },
+          "priority": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Priority"
+          },
+          "timeline_event_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Timeline Event Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "incident_id",
+          "incident_type",
+          "latitude",
+          "longitude",
+          "current_severity",
+          "current_people_affected",
+          "current_people_trapped",
+          "current_description",
+          "evidence_hashes",
+          "has_conflict",
+          "conflict_details",
+          "severity_observations",
+          "location_observations",
+          "assigned_responder_id",
+          "responder_status",
+          "priority",
+          "timeline_event_ids"
+        ],
+        "title": "IncidentDetailResponse"
+      },
+      "IncidentSummaryResponse": {
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id"
+          },
+          "incident_type": {
+            "type": "string",
+            "title": "Incident Type"
+          },
+          "latitude": {
+            "type": "number",
+            "title": "Latitude"
+          },
+          "longitude": {
+            "type": "number",
+            "title": "Longitude"
+          },
+          "current_severity": {
+            "type": "integer",
+            "title": "Current Severity"
+          },
+          "current_people_affected": {
+            "type": "integer",
+            "title": "Current People Affected"
+          },
+          "current_people_trapped": {
+            "type": "boolean",
+            "title": "Current People Trapped"
+          },
+          "current_description": {
+            "type": "string",
+            "title": "Current Description"
+          },
+          "has_conflict": {
+            "type": "boolean",
+            "title": "Has Conflict"
+          },
+          "conflict_details": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Conflict Details"
+          },
+          "priority_score": {
+            "type": "integer",
+            "title": "Priority Score"
+          },
+          "priority_level": {
+            "type": "string",
+            "title": "Priority Level"
+          },
+          "needs_verification": {
+            "type": "boolean",
+            "title": "Needs Verification"
+          },
+          "reporting_device_count": {
+            "type": "integer",
+            "title": "Reporting Device Count"
+          },
+          "created_at_ms": {
+            "type": "integer",
+            "title": "Created At Ms"
+          },
+          "latest_update_ms": {
+            "type": "integer",
+            "title": "Latest Update Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "incident_id",
+          "incident_type",
+          "latitude",
+          "longitude",
+          "current_severity",
+          "current_people_affected",
+          "current_people_trapped",
+          "current_description",
+          "has_conflict",
+          "conflict_details",
+          "priority_score",
+          "priority_level",
+          "needs_verification",
+          "reporting_device_count",
+          "created_at_ms",
+          "latest_update_ms"
+        ],
+        "title": "IncidentSummaryResponse"
+      },
+      "MissingEventsRequest": {
+        "properties": {
+          "known_event_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Known Event Ids",
+            "description": "List of event IDs already present on client/peer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "known_event_ids"
+        ],
+        "title": "MissingEventsRequest",
+        "description": "Peer's known event IDs to compute missing set difference."
+      },
+      "MissingEventsResponse": {
+        "properties": {
+          "missing_count": {
+            "type": "integer",
+            "title": "Missing Count"
+          },
+          "missing_events": {
+            "items": {
+              "$ref": "#/components/schemas/EventDetailResponse"
+            },
+            "type": "array",
+            "title": "Missing Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "missing_count",
+          "missing_events"
+        ],
+        "title": "MissingEventsResponse"
+      },
+      "QuarantineReason": {
+        "type": "string",
+        "enum": [
+          "invalid_signature",
+          "hash_mismatch",
+          "malformed_payload",
+          "clock_skew_excessive",
+          "unauthorized_role",
+          "missing_fields"
+        ],
+        "title": "QuarantineReason"
+      },
+      "QuarantinedEventResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
+          "device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          },
+          "raw_data": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Raw Data"
+          },
+          "quarantine_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Quarantine Reasons"
+          },
+          "quarantined_at_iso": {
+            "type": "string",
+            "title": "Quarantined At Iso"
+          },
+          "remote_addr": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remote Addr"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "event_id",
+          "device_id",
+          "raw_data",
+          "quarantine_reasons",
+          "quarantined_at_iso",
+          "remote_addr"
+        ],
+        "title": "QuarantinedEventResponse"
+      },
+      "RescueMeshEvent": {
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Event Id",
+            "description": "SHA-256 hash of canonical content"
+          },
+          "event_type": {
+            "$ref": "#/components/schemas/EventType",
+            "description": "Discriminator event type"
+          },
+          "device_id": {
+            "type": "string",
+            "maxLength": 130,
+            "minLength": 8,
+            "title": "Device Id",
+            "description": "Origin device public identity hash"
+          },
+          "clock": {
+            "$ref": "#/components/schemas/HybridLogicalClock",
+            "description": "Hybrid Logical Clock of the event origin"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload",
+            "description": "Validated event payload"
+          },
+          "signature": {
+            "type": "string",
+            "minLength": 10,
+            "title": "Signature",
+            "description": "ECDSA signature (P-256) over canonical content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "event_id",
+          "event_type",
+          "device_id",
+          "clock",
+          "payload",
+          "signature"
+        ],
+        "title": "RescueMeshEvent",
+        "description": "Immutable, content-addressed append-only RescueMesh event.\n- event_id: SHA-256 hex of canonical (clock, device_id, event_type, payload)\n- signature: ECDSA signature over the canonical content"
+      },
+      "ResponderBriefing": {
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id"
+          },
+          "briefing_type": {
+            "type": "string",
+            "title": "Briefing Type",
+            "description": "'ai_grounded' or 'deterministic_template'"
+          },
+          "executive_summary": {
+            "type": "string",
+            "title": "Executive Summary"
+          },
+          "verified_facts": {
+            "items": {
+              "$ref": "#/components/schemas/GroundedClaim"
+            },
+            "type": "array",
+            "title": "Verified Facts"
+          },
+          "unverified_reports": {
+            "items": {
+              "$ref": "#/components/schemas/GroundedClaim"
+            },
+            "type": "array",
+            "title": "Unverified Reports"
+          },
+          "conflicting_observations": {
+            "items": {
+              "$ref": "#/components/schemas/GroundedClaim"
+            },
+            "type": "array",
+            "title": "Conflicting Observations"
+          },
+          "recommended_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Recommended Actions"
+          },
+          "dropped_claims": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dropped Claims",
+            "description": "Claims rejected by the Cite-or-Drop verifier due to lack of evidence citations"
+          },
+          "evidence_event_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Evidence Event Ids"
+          },
+          "priority_score": {
+            "type": "integer",
+            "title": "Priority Score"
+          },
+          "priority_level": {
+            "type": "string",
+            "title": "Priority Level"
+          },
+          "priority_explanation": {
+            "type": "string",
+            "title": "Priority Explanation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "incident_id",
+          "briefing_type",
+          "executive_summary",
+          "priority_score",
+          "priority_level",
+          "priority_explanation"
+        ],
+        "title": "ResponderBriefing",
+        "description": "Structured operational briefing for first responders and dispatch.\nStrictly distinguishes verified facts from unverified claims and conflicting observations."
+      },
+      "SyncExportRequest": {
+        "properties": {
+          "event_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Ids",
+            "description": "Optional specific IDs to export; if None exports all"
+          },
+          "format": {
+            "type": "string",
+            "title": "Format",
+            "description": "'chunked_qr' or 'json'",
+            "default": "chunked_qr"
+          },
+          "chunk_size": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 50.0,
+            "title": "Chunk Size",
+            "description": "Max character length per QR frame",
+            "default": 220
+          }
+        },
+        "type": "object",
+        "title": "SyncExportRequest"
+      },
+      "SyncExportResponse": {
+        "properties": {
+          "format": {
+            "type": "string",
+            "title": "Format"
+          },
+          "total_events": {
+            "type": "integer",
+            "title": "Total Events"
+          },
+          "json_events": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Json Events"
+          },
+          "qr_frames": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qr Frames"
+          },
+          "frame_count": {
+            "type": "integer",
+            "title": "Frame Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "format",
+          "total_events"
+        ],
+        "title": "SyncExportResponse"
+      },
+      "SyncImportProgressResponse": {
+        "properties": {
+          "is_complete": {
+            "type": "boolean",
+            "title": "Is Complete"
+          },
+          "received_frames": {
+            "type": "integer",
+            "title": "Received Frames"
+          },
+          "total_frames": {
+            "type": "integer",
+            "title": "Total Frames"
+          },
+          "progress_percent": {
+            "type": "number",
+            "title": "Progress Percent"
+          },
+          "ingest_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventIngestResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "is_complete",
+          "received_frames",
+          "total_frames",
+          "progress_percent"
+        ],
+        "title": "SyncImportProgressResponse"
+      },
+      "SyncImportRequest": {
+        "properties": {
+          "format": {
+            "type": "string",
+            "title": "Format",
+            "description": "'chunked_qr' or 'json'",
+            "default": "chunked_qr"
+          },
+          "qr_frames": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qr Frames",
+            "description": "List of scanned RM1:... QR frame strings"
+          },
+          "json_events": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Json Events",
+            "description": "Array of raw event objects"
+          },
+          "public_keys": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Public Keys",
+            "description": "Public keys for verification"
+          },
+          "client_device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Device Id"
+          }
+        },
+        "type": "object",
+        "title": "SyncImportRequest"
+      },
+      "SyncSummaryResponse": {
+        "properties": {
+          "total_events": {
+            "type": "integer",
+            "title": "Total Events"
+          },
+          "event_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Event Ids"
+          },
+          "latest_wall_time_ms": {
+            "type": "integer",
+            "title": "Latest Wall Time Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_events",
+          "event_ids",
+          "latest_wall_time_ms"
+        ],
+        "title": "SyncSummaryResponse",
+        "description": "Compact summary of local event store state for peer set-difference reconciliation."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

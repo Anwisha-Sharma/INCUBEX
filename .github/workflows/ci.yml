@@ -1,0 +1,39 @@
+name: RescueMesh CI
+
+on:
+  push:
+    branches: [ "main", "feature/*" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    name: Backend Test Suite & Schema Parity
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Astral uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install Dependencies
+        working-directory: ./backend
+        run: uv sync --all-groups
+
+      - name: Run Pytest Test Suite
+        working-directory: ./backend
+        run: uv run pytest -v
+
+      - name: Check OpenAPI Contract Drift
+        working-directory: ./backend
+        run: |
+          uv run python -c "import json, sys; from app.main import app; gen = app.openapi(); on_disk = json.load(open('../contracts/openapi.json', encoding='utf-8')); assert sorted(list(gen['paths'].keys())) == sorted(list(on_disk['paths'].keys())), 'OpenAPI endpoints mismatch'; print('OpenAPI contract is in 100% parity with backend routes')"
+

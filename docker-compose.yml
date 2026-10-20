@@ -1,0 +1,59 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: rescuemesh-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+psycopg://postgres:rescuemesh_secret@postgres:5432/rescuemesh
+      - DEBUG=false
+      - APP_NAME=RescueMesh Core API
+      - ALLOWED_ORIGINS=["*"]
+      - RATE_LIMIT_DEFAULT=100/minute
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - rescuemesh-net
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: rescuemesh-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=rescuemesh_secret
+      - POSTGRES_DB=rescuemesh
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rescuemesh"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rescuemesh-net
+
+  hub:
+    build:
+      context: ./hub
+      dockerfile: Dockerfile
+    container_name: rescuemesh-local-hub
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    networks:
+      - rescuemesh-net
+
+volumes:
+  postgres-data:
+    driver: local
+
+networks:
+  rescuemesh-net:
+    driver: bridge
